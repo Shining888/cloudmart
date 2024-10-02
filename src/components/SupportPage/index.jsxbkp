@@ -78,7 +78,7 @@ const CustomerSupportPage = () => {
 
   const createNewThread = async () => {
     try {
-      const response = await api.post("/ai/start");
+      const response = await api.post("/tickets");
       const newThread = {
         id: response.data.threadId,
         name: `Thread ${threads.length + 1}`,
@@ -95,18 +95,23 @@ const CustomerSupportPage = () => {
     }
   };
 
-  const deleteThread = (threadId) => {
-    const updatedThreads = threads.filter((thread) => thread.id !== threadId);
-    setThreads(updatedThreads);
-    saveThreadsToLocalStorage(updatedThreads);
+  const deleteThread = async (threadId) => {
+    try {
+      await api.delete(`/tickets/${threadId}`);
+      const updatedThreads = threads.filter((thread) => thread.id !== threadId);
+      setThreads(updatedThreads);
+      saveThreadsToLocalStorage(updatedThreads);
 
-    if (currentThreadId === threadId) {
-      const nextActiveThread = updatedThreads.find((thread) => !thread.ended);
-      setCurrentThreadId(nextActiveThread ? nextActiveThread.id : null);
-      setMessages(nextActiveThread ? nextActiveThread.messages : []);
+      if (currentThreadId === threadId) {
+        const nextActiveThread = updatedThreads.find((thread) => !thread.ended);
+        setCurrentThreadId(nextActiveThread ? nextActiveThread.id : null);
+        setMessages(nextActiveThread ? nextActiveThread.messages : []);
+      }
+
+      setEndedThreads(endedThreads.filter((id) => id !== threadId));
+    } catch (error) {
+      console.error("Error deleting thread:", error);
     }
-
-    setEndedThreads(endedThreads.filter((id) => id !== threadId));
   };
 
   const endSupport = async () => {
@@ -115,15 +120,9 @@ const CustomerSupportPage = () => {
     try {
       setIsLoading(true);
 
-      // Send the thread for sentiment analysis
-      await api.post("/ai/analyze-sentiment", {
-        thread: {
-          id: currentThreadId,
-          name:
-            threads.find((t) => t.id === currentThreadId)?.name ||
-            "Ended Thread",
-          messages: messages,
-        },
+      // Send the thread for sentiment analysis and mark it as ended
+      await api.post(`/tickets/${currentThreadId}/end`, {
+        messages: messages,
       });
 
       // Update local state
@@ -152,8 +151,6 @@ const CustomerSupportPage = () => {
     }
   };
 
-  const isThreadEnded = (threadId) => endedThreads.includes(threadId);
-
   const handleSendMessage = async () => {
     if (
       inputMessage.trim() === "" ||
@@ -171,8 +168,7 @@ const CustomerSupportPage = () => {
     setIsTyping(true);
 
     try {
-      const response = await api.post("/ai/message", {
-        threadId: currentThreadId,
+      const response = await api.post(`/tickets/${currentThreadId}/message`, {
         message: inputMessage,
       });
 
@@ -214,6 +210,8 @@ const CustomerSupportPage = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  const isThreadEnded = (threadId) => endedThreads.includes(threadId);
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
@@ -270,7 +268,7 @@ const CustomerSupportPage = () => {
                 className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
                 disabled={isLoading}
               >
-                End Thread
+                End Support
               </button>
             )}
           </div>
@@ -342,3 +340,4 @@ const CustomerSupportPage = () => {
 };
 
 export default CustomerSupportPage;
+
