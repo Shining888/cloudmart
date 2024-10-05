@@ -1,0 +1,145 @@
+import pkg from "aws-sdk";
+const { DynamoDB } = pkg;
+import dotenv from "dotenv";
+import { v4 as uuidv4 } from "uuid";
+
+dotenv.config();
+const dynamoDb = new DynamoDB.DocumentClient({
+  region: process.env.AWS_REGION,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+});
+
+const TABLE_NAME = "cloudmart-tickets";
+
+// Create a new ticket
+export const createTicket = async (req, res) => {
+  const newTicket = {
+    id: uuidv4().split("-")[0], // Generate a short unique ID
+    name: req.body.name || "New Support Thread",
+    messages: [],
+    createdAt: new Date().toISOString(),
+    status: "active",
+    ended: false,
+  };
+
+  const params = {
+    TableName: TABLE_NAME,
+    Item: newTicket,
+  };
+
+  try {
+    await dynamoDb.put(params).promise();
+    res.status(201).json({ threadId: newTicket.id });
+  } catch (error) {
+    console.error("Error creating ticket:", error);
+    res.status(500).json({ error: "Could not create ticket" });
+  }
+};
+
+// Add a message to an existing ticket
+export const addMessageToTicket = async (req, res) => {
+  const { id } = req.params;
+  const { message } = req.body;
+
+  const params = {
+    TableName: TABLE_NAME,
+    Key: { id },
+    UpdateExpression: "SET messages = list_append(messages, :newMessage)",
+    ExpressionAttributeValues: {
+      ":newMessage": [{ text: message, sender: "user", timestamp: new Date().toISOString() }],
+    },
+    ReturnValues: "ALL_NEW",
+  };
+
+  try {
+    const result = await dynamoDb.update(params).promise();
+    res.status(200).json({ response: "Message added", ticket: result.Attributes });
+  } catch (error) {
+    console.error("Error adding message to ticket:", error);
+    res.status(500).json({ error: "Could not add message to ticket" });
+  }
+};
+
+// Mark a ticket as ended and send for sentiment analysis (if applicable)
+export const endTicket = async (req, res) => {
+  const { id } = req.params;
+
+  const params = {
+    TableName: TABLE_NAME,
+    Key: { id },
+    UpdateExpression: "SET ended = :ended, status = :status",
+    ExpressionAttributeValues: {
+      ":ended": true,
+      ":status": "closed",
+    },
+    ReturnValues: "ALL_NEW",
+  };
+
+  try {
+    const result = await dynamoDb.update(params).promise();
+    
+    // Sentiment analysis can be added here (API call to sentiment analysis service if needed)
+    
+    res.status(200).json({ message: "Support thread ended", ticket: result.Attributes });
+  } catch (error) {
+    console.error("Error ending ticket:", error);
+    res.status(500).json({ error: "Could not end the support thread" });
+  }
+};
+
+// Delete a ticket
+export const deleteTicket = async (req, res) => {
+  const { id } = req.params;
+
+  const params = {
+    TableName: TABLE_NAME,
+    Key: { id },
+  };
+
+  try {
+    await dynamoDb.delete(params).promise();
+    res.status(200).json({ message: "Ticket deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting ticket:", error);
+    res.status(500).json({ error: "Could not delete the ticket" });
+  }
+};
+
+// Get all tickets (optional for listing all tickets)
+export const getAllTickets = async (req, res) => {
+  const params = {
+    TableName: TABLE_NAME,
+  };
+
+  try {
+    const result = await dynamoDb.scan(params).promise();
+    res.status(200).json({ tickets: result.Items });
+  } catch (error) {
+    console.error("Error retrieving tickets:", error);
+    res.status(500).json({ error: "Could not retrieve tickets" });
+  }
+};
+
+// Get a single ticket by ID (optional for individual ticket view)
+export const getTicketById = async (req, res) => {
+  const { id } = req.params;
+
+  const params = {
+    TableName: TABLE_NAME,
+    Key: { id },
+  };
+
+  try {
+    const result = await dynamoDb.get(params).promise();
+    if (result.Item) {
+      res.status(200).json(result.Item);
+    } else {
+      res.status(404).json({ error: "Ticket not found" });
+    }
+  } catch (error) {
+    console.error("Error retrieving ticket:", error);
+    res.status(500).json({ error: "Could not retrieve the ticket" });
+  }
+};
+
